@@ -40,3 +40,5 @@ timer.OnTimerStop += (sender, e) =>
 
 timer.Start();
 ```
+
+Any improvements/features to add or bugs to fix are greatly appreciated.
