@@ -27,15 +27,15 @@ timer.OnTimerStateChanged += (sender, state) =>
 	bool exampleCondition = true;
 	if (state == ExtendedTimer.TimerState.Paused && exampleCondition)
 	{
-        	Console.WriteLine("resuming timer because a condition was met.");
+		Console.WriteLine("resuming timer because a condition was met.");
 		timer.Resume();
-    	}
+	}
 };
 
 timer.OnTimerStop += (sender, e) =>
 {
 	Console.WriteLine("timer has stopped. i wonder why...");
-    	Console.WriteLine("time since timer has been started: " + new DateTime(timer.TimeSinceStart));
+	Console.WriteLine("time since timer has been started: " + new DateTime(timer.TimeSinceStart));
 };
 
 timer.Start();
