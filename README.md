@@ -12,30 +12,30 @@ timer.TickOnStartIgnoreDelay = true; // ignore the start delay if TickOnStart is
 // listening for tick events
 timer.OnTimerTick += (sender, e) =>
 {
-    Console.WriteLine($"timer has ticked {timer.TickCount} times");
+	Console.WriteLine($"timer has ticked {timer.TickCount} times");
 	if (timer.TickCount > 10)
 	{
-        Console.WriteLine("pausing timer because it has ticked over 10 times");
+		Console.WriteLine("pausing timer because it has ticked over 10 times");
 		timer.Pause();
-    }
+	}
 };
 
 // listening for state changes
 timer.OnTimerStateChanged += (sender, state) =>
 {
-    Console.WriteLine("timer state has changed. new state: " + state);
+	Console.WriteLine("timer state has changed. new state: " + state);
 	bool exampleCondition = true;
 	if (state == ExtendedTimer.TimerState.Paused && exampleCondition)
 	{
-        Console.WriteLine("resuming timer because a condition was met.");
+        	Console.WriteLine("resuming timer because a condition was met.");
 		timer.Resume();
-    }
+    	}
 };
 
 timer.OnTimerStop += (sender, e) =>
 {
 	Console.WriteLine("timer has stopped. i wonder why...");
-    Console.WriteLine("time since timer has been started: " + new DateTime(timer.TimeSinceStart));
+    	Console.WriteLine("time since timer has been started: " + new DateTime(timer.TimeSinceStart));
 };
 
 timer.Start();
