@@ -1,3 +1,4 @@
+#pragma warning disable
 namespace Azrellie.Misc.ExtendedTimer
 {
 	public class ExtendedTimer : IDisposable
@@ -13,7 +14,6 @@ namespace Azrellie.Misc.ExtendedTimer
 		private TimerState lastState;
 		private bool paused = false;
 		private bool enabled = false;
-		private long timeSinceLastTick = 0;
 
 		// properties
 		/// <summary>
@@ -65,7 +65,7 @@ namespace Azrellie.Misc.ExtendedTimer
 		/// </summary>
 		public TimerState State { get; set; } = TimerState.Stopped;
 
-		// events
+		public delegate void OnTimerStartAfterDelayEventHandler(object sender, EventArgs e);
 		public delegate void OnTimerStartEventHandler(object sender, EventArgs e);
 		public delegate void OnTimerStopEventHandler(object sender, EventArgs e);
 		public delegate void OnTimerTickEventHandler(object sender, EventArgs e);
@@ -73,14 +73,18 @@ namespace Azrellie.Misc.ExtendedTimer
 		public delegate void OnTimerResumedEventHandler(object sender, EventArgs e);
 		public delegate void OnTimerStateChangedEventHandler(object sender, TimerState state);
 
-#pragma warning disable
 		/// <summary>
-		/// Fired whenever <see cref="Timer.Start"/> is called.
+		/// Fired whenever the timer is started after the delay is finished.
+		/// </summary>
+		public event OnTimerStartEventHandler OnTimerStartAfterDelay;
+
+		/// <summary>
+		/// Fired whenever the timer is started.
 		/// </summary>
 		public event OnTimerStartEventHandler OnTimerStart;
 
 		/// <summary>
-		/// Fired whenever <see cref="Timer.Stop"/> is called.
+		/// Fired whenever the timer is stopped.
 		/// </summary>
 		public event OnTimerStopEventHandler OnTimerStop;
 
@@ -89,18 +93,31 @@ namespace Azrellie.Misc.ExtendedTimer
 		/// </summary>
 		public event OnTimerTickEventHandler OnTimerTick;
 
+		/// <summary>
+		/// Fired whenever the timer is paused.
+		/// </summary>
 		public event OnTimerPausedEventHandler OnTimerPaused;
 
+		/// <summary>
+		/// Fired whenever the timer is resumed.
+		/// </summary>
 		public event OnTimerResumedEventHandler OnTimerResumed;
 
+		/// <summary>
+		/// Fired whenever the timer state changes.
+		/// </summary>
 		public event OnTimerStateChangedEventHandler OnTimerStateChanged;
 
+		/// <summary>
+		/// Starts the timer.
+		/// </summary>
 		public void Start()
 		{
 			enabled = true;
 			TimeSinceStart = DateTime.UtcNow.Ticks;
 			InvokeStateChanged(TimerState.Running);
 			OnTimerStateChanged?.Invoke(this, State);
+			OnTimerStart?.Invoke(this, EventArgs.Empty);
 			InternalStart();
 		}
 
@@ -115,6 +132,7 @@ namespace Azrellie.Misc.ExtendedTimer
 			TickCount = 0;
 			enabled = false;
 			InvokeStateChanged(TimerState.Stopped);
+			OnTimerStop?.Invoke(this, EventArgs.Empty);
 			OnTimerStateChanged?.Invoke(this, State);
 		}
 
@@ -125,13 +143,18 @@ namespace Azrellie.Misc.ExtendedTimer
 		{
 			paused = false;
 			InvokeStateChanged(TimerState.Paused);
+			OnTimerPaused?.Invoke(this, EventArgs.Empty);
 			OnTimerStateChanged?.Invoke(this, State);
 		}
 
+		/// <summary>
+		/// Resumes the timer.
+		/// </summary>
 		public void Resume()
 		{
 			paused = false;
 			InvokeStateChanged(TimerState.Running);
+			OnTimerResumed?.Invoke(this, EventArgs.Empty);
 			OnTimerStateChanged?.Invoke(this, State);
 		}
 
@@ -144,7 +167,6 @@ namespace Azrellie.Misc.ExtendedTimer
 				Stop();
 				return;
 			}
-			timeSinceLastTick = DateTime.UtcNow.Ticks;
 			TickCount++;
 			OnTimerTick?.Invoke(this, EventArgs.Empty);
 		}
@@ -159,8 +181,14 @@ namespace Azrellie.Misc.ExtendedTimer
 
 		private async Task InternalStart()
 		{
-			if (TickOnStart)
+			if (TickOnStart && TickOnStartIgnoreDelay)
 				InvokeOnTickEvent();
+
+			if (StartDelay > 0)
+				await Task.Delay((int)StartDelay);
+
+            Console.WriteLine("ran");
+            OnTimerStartAfterDelay?.Invoke(this, EventArgs.Empty);
 
 			while (enabled)
 			{
@@ -174,6 +202,9 @@ namespace Azrellie.Misc.ExtendedTimer
 			}
 		}
 
+		/// <summary>
+		/// Free up resources taken by this object.
+		/// </summary>
 		public void Dispose()
 		{
 			Stop();
