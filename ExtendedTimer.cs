@@ -48,7 +48,7 @@ public class ExtendedTimer : IDisposable
 	public bool TickOnStart { get; set; } = false;
 
 	/// <summary>
-	/// How many times this timers <see cref="OnTimerTick"/> has been fired.
+	/// How many times this timer <see cref="OnTimerTick"/> has been fired.
 	/// </summary>
 	public long TickCount { get; private set; } = 0;
 
