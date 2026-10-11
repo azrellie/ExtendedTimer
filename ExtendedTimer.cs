@@ -1,7 +1,5 @@
 #pragma warning disable
 using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Security;
 
 namespace Azrellie.Misc.ExtendedTimer;
 
@@ -15,7 +13,7 @@ public enum TimerState
 public enum TickMethod
 {
 	/// <summary>
-	/// Make the timer use <see cref="Task.Delay(int)"/> for ticking, but is highly prone to drift (millisecond precision) resulting in unreliable delta times. Useful for servers or basic low frequency ticking.
+	/// Make the timer use <see cref="Task.Delay(int)"/> for ticking, but is highly prone to drift (millisecond to precision) resulting in unreliable delta times. Useful for servers or basic low frequency ticking.
 	/// </summary>
 	TaskDelay,
 	/// <summary>
@@ -48,7 +46,7 @@ public class ExtendedTimer : IDisposable
 	public bool TickOnStart { get; set; } = false;
 
 	/// <summary>
-	/// How many times this timer <see cref="OnTimerTick"/> has been fired.
+	/// How many times this timers <see cref="OnTimerTick"/> has been fired.
 	/// </summary>
 	public long TickCount { get; private set; } = 0;
 
@@ -65,7 +63,7 @@ public class ExtendedTimer : IDisposable
 	/// <summary>
 	/// Whether this <see cref="ExtendedTimer"/> is allowed to fire <see cref="OnTimerTick"/>. Default value is false.
 	/// </summary>
-	public bool Enabled { get; set; } = false;
+	public bool Enabled { get; private set; } = false;
 
 	/// <summary>
 	/// The amount (in milliseconds) of time to wait before firing <see cref="OnTimerTick"/>. Default value is 1000.
@@ -153,18 +151,29 @@ public class ExtendedTimer : IDisposable
 	/// </summary>
 	public event OnTimerStateChangedEventHandler OnTimerStateChanged;
 
+	private volatile int generation = 0;
+
 	/// <summary>
 	/// Starts the timer.
 	/// </summary>
 	public void Start()
 	{
 		if (State == TimerState.Running) return; // we are already running. ignore it
+		sw.Restart();
 		OnTimerStart?.Invoke(State, TimerState.Running);
 		Enabled = true;
 		paused = false;
 		TimeAtStart = DateTimeOffset.UtcNow;
 		InvokeStateChanged(TimerState.Running);
-		_ = InternalStart();
+		int gen = ++generation;
+		if (TickingMethod == TickMethod.TaskDelay)
+			_ = Task.Run(() => InternalStart(gen));
+		else
+			new Thread(() => InternalStart(gen).GetAwaiter().GetResult())
+			{
+				IsBackground = true,
+				Name = "ExtendedTimer"
+			}.Start();
 	}
 
 	/// <summary>
@@ -175,6 +184,7 @@ public class ExtendedTimer : IDisposable
 	/// </remarks>
 	public void Stop()
 	{
+		if (State == TimerState.Stopped) return;
 		TickCount = 0;
 		Enabled = false;
 		OnTimerStop?.Invoke(State, TimerState.Stopped);
@@ -182,11 +192,12 @@ public class ExtendedTimer : IDisposable
 	}
 
 	/// <summary>
-	/// Stops the <see cref="ExtendedTimer"/> without resetting the <see cref="TickCount"/> back to 0.
+	/// Pauses the <see cref="ExtendedTimer"/> without resetting the <see cref="TickCount"/> back to 0.
 	/// </summary>
-	/// /// <param name="unpause">How long to wait (in milliseconds) before unpausing the timer.</param>
+	/// <param name="unpause">How long to wait (in milliseconds) before unpausing the timer.</param>
 	public void Pause(int unpause = -1)
 	{
+		if (State != TimerState.Running) return;
 		if (paused) return;
 		paused = true;
 		OnTimerPaused?.Invoke(State, TimerState.Paused);
@@ -204,7 +215,8 @@ public class ExtendedTimer : IDisposable
 			else
 			{
 				// busy wait until time is up
-				while (sw.ElapsedMilliseconds < unpause)
+				var pauseSw = Stopwatch.StartNew();
+				while (pauseSw.Elapsed.TotalMilliseconds < unpause)
 				{
 					Thread.SpinWait(AmountToSpinWait);
 				}
@@ -218,6 +230,8 @@ public class ExtendedTimer : IDisposable
 	/// </summary>
 	public void Resume()
 	{
+		if (State != TimerState.Paused) return;
+		sw.Restart();
 		paused = false;
 		OnTimerResumed?.Invoke(State, TimerState.Running);
 		InvokeStateChanged(TimerState.Running);
@@ -227,14 +241,11 @@ public class ExtendedTimer : IDisposable
 	{
 		if (!Enabled) return;
 		if (paused) return;
-		if (TickCount >= AmountToTick && AmountToTick != -1)
-		{
-			Stop();
-			return;
-		}
 		TickCount++;
 		OnTimerTick?.Invoke(sw.Elapsed.TotalSeconds);
 		sw.Restart();
+		if (AmountToTick != -1 && TickCount >= AmountToTick)
+			Stop();
 	}
 
 	private void InvokeStateChanged(TimerState newState)
@@ -244,7 +255,7 @@ public class ExtendedTimer : IDisposable
 		OnTimerStateChanged?.Invoke(oldState, newState);
 	}
 
-	private async Task InternalStart()
+	private async Task InternalStart(int gen)
 	{
 		if (TickOnStart && TickOnStartIgnoreDelay)
 			InvokeOnTickEvent();
@@ -253,10 +264,14 @@ public class ExtendedTimer : IDisposable
 		{
 			if (StartDelay > 0)
 				await Task.Delay((int)StartDelay);
-
+			if (!Enabled || gen != generation) return;
+			sw.Restart();
 			OnTimerStartAfterDelay?.Invoke(State, TimerState.Running);
 
-			while (Enabled)
+			if (TickOnStart && !TickOnStartIgnoreDelay)
+				InvokeOnTickEvent();
+
+			while (Enabled && gen == generation)
 			{
 				if (paused)
 				{
@@ -264,25 +279,29 @@ public class ExtendedTimer : IDisposable
 					continue;
 				}
 				await Task.Delay(TickInterval);
+				if (gen != generation) return;
 				InvokeOnTickEvent();
 			}
 		}
 		else
 		{
 			if (StartDelay > 0)
-				while (sw.ElapsedMilliseconds < StartDelay)
+				while (sw.ElapsedMilliseconds < StartDelay && Enabled && gen == generation)
 				{
 					Thread.SpinWait(AmountToSpinWait);
 				}
-
+			if (!Enabled || gen != generation) return;
+			sw.Restart();
 			OnTimerStartAfterDelay?.Invoke(State, TimerState.Running);
 
-			while (Enabled)
+			if (TickOnStart && !TickOnStartIgnoreDelay)
+				InvokeOnTickEvent();
+
+			while (Enabled && gen == generation)
 			{
-				if (sw.Elapsed.TotalMilliseconds >= TickInterval)
+				if (!paused && sw.Elapsed.TotalMilliseconds >= TickInterval)
 				{
 					InvokeOnTickEvent();
-					sw.Restart();
 				}
 				else
 				{
