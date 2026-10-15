@@ -13,7 +13,7 @@ public enum TimerState
 public enum TickMethod
 {
 	/// <summary>
-	/// Make the timer use <see cref="Task.Delay(int)"/> for ticking, but is highly prone to drift (millisecond to precision) resulting in unreliable delta times. Useful for servers or basic low frequency ticking.
+	/// Make the timer use <see cref="Task.Delay(int)"/> for ticking, but is highly prone to drift (millisecond precision) resulting in unreliable delta times. Useful for servers or basic low frequency ticking.
 	/// </summary>
 	TaskDelay,
 	/// <summary>
